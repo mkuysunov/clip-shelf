@@ -1,6 +1,6 @@
 // Преобразование KeyboardEvent -> Electron accelerator и обратно в читаемый вид
 
-const CODE_KEYS = {
+const CODE_KEYS: Record<string, string> = {
   Space: 'Space',
   Tab: 'Tab',
   Enter: 'Enter',
@@ -28,15 +28,15 @@ const CODE_KEYS = {
 };
 
 // Возвращает { accel, key } — key === null, если нажаты только модификаторы
-export function eventToAccelerator(e, isMac) {
-  const mods = [];
+export function eventToAccelerator(e: KeyboardEvent, isMac: boolean) {
+  const mods: string[] = [];
   if (isMac ? e.metaKey : e.ctrlKey) mods.push('CommandOrControl');
   if (isMac && e.ctrlKey) mods.push('Control');
   if (!isMac && e.metaKey) mods.push('Command');
   if (e.altKey) mods.push('Alt');
   if (e.shiftKey) mods.push('Shift');
 
-  let key = null;
+  let key: string | null = null;
   const c = e.code || '';
   if (/^Key[A-Z]$/.test(c)) key = c.slice(3);
   else if (/^Digit[0-9]$/.test(c)) key = c.slice(5);
@@ -46,17 +46,18 @@ export function eventToAccelerator(e, isMac) {
   return { mods, key, accel: key ? [...mods, key].join('+') : null };
 }
 
-export function formatAccelerator(accel, isMac) {
+export function formatAccelerator(accel: string | null | undefined, isMac: boolean) {
   if (!accel) return '';
   const parts = accel.split('+');
-  const key = parts.pop();
-  const keyLabel = { Up: '↑', Down: '↓', Left: '←', Right: '→', Space: '␣', Enter: '↩', Backspace: '⌫', Delete: '⌦', Escape: '⎋', Tab: '⇥' }[key] || key;
+  const key = parts.pop()!;
+  const labels: Record<string, string> = { Up: '↑', Down: '↓', Left: '←', Right: '→', Space: '␣', Enter: '↩', Backspace: '⌫', Delete: '⌦', Escape: '⎋', Tab: '⇥' };
+  const keyLabel = labels[key] || key;
   if (isMac) {
-    const map = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' };
+    const map: Record<string, string> = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' };
     return parts.map((p) => map[p] || p).join('') + keyLabel;
   }
-  const map = { CommandOrControl: 'Ctrl', Command: 'Win', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+  const map: Record<string, string> = { CommandOrControl: 'Ctrl', Command: 'Win', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
   return [...parts.map((p) => map[p] || p), keyLabel].join('+');
 }
 
-export const hasStrongModifier = (mods) => mods.some((m) => m !== 'Shift');
+export const hasStrongModifier = (mods: string[]) => mods.some((m) => m !== 'Shift');

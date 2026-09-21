@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Settings } from '../electron/types';
 import logo from './logo.png';
-import { I18nContext, LANGS, makeT } from './i18n.js';
-import { formatAccelerator } from './hotkey.js';
+import { I18nContext, LANGS, makeT } from './i18n';
+import { formatAccelerator } from './hotkey';
 
 const api = window.clip;
 const isMac = api?.platform === 'darwin';
 
 export default function Onboarding() {
-  const [settings, setSettings] = useState({ lang: 'en', hotkey: 'CommandOrControl+Shift+V' });
+  const [settings, setSettings] = useState<Pick<Settings, 'lang' | 'hotkey'>>({ lang: 'en', hotkey: 'CommandOrControl+Shift+V' });
   const i18n = useMemo(() => makeT(settings.lang), [settings.lang]);
   const { t } = i18n;
 

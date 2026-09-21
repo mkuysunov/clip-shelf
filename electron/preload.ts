@@ -1,12 +1,15 @@
-const { contextBridge, ipcRenderer } = require('electron');
+import { contextBridge, ipcRenderer } from 'electron';
+import type { ClipApi } from './types';
 
-function subscribe(channel, cb) {
-  const handler = (_e, data) => cb(data);
+function subscribe<T>(channel: string, cb: (data: T) => void) {
+  const handler = (_e: Electron.IpcRendererEvent, data: T) => cb(data);
   ipcRenderer.on(channel, handler);
-  return () => ipcRenderer.removeListener(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
 }
 
-contextBridge.exposeInMainWorld('clip', {
+const api: ClipApi = {
   // история
   getHistory: () => ipcRenderer.invoke('history:get'),
   paste: (id) => ipcRenderer.invoke('item:use', id, true), // скопировать + вставить (история или сниппет)
@@ -52,4 +55,6 @@ contextBridge.exposeInMainWorld('clip', {
   hide: () => ipcRenderer.invoke('panel:hide'),
   onShown: (cb) => subscribe('panel:shown', cb),
   platform: process.platform,
-});
+};
+
+contextBridge.exposeInMainWorld('clip', api);

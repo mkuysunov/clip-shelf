@@ -1,17 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useI18n } from './i18n.js';
-import { eventToAccelerator, formatAccelerator, hasStrongModifier } from './hotkey.js';
+import { useEffect, useRef, useState } from 'react';
+import { useI18n } from './i18n';
+import { eventToAccelerator, formatAccelerator, hasStrongModifier } from './hotkey';
 
 const api = window.clip;
 const isMac = api?.platform === 'darwin';
 
+interface Props {
+  value: string;
+  onSaved?: (accel: string) => void;
+}
+
 // Поле «горячая клавиша»: клик -> запись сочетания -> проверка в main
-export default function HotkeyField({ value, onSaved }) {
+export default function HotkeyField({ value, onSaved }: Props) {
   const { t } = useI18n();
   const [recording, setRecording] = useState(false);
   const [preview, setPreview] = useState('');
-  const [status, setStatus] = useState(null); // { ok, text }
-  const btnRef = useRef(null);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!recording) return;
@@ -22,12 +27,13 @@ export default function HotkeyField({ value, onSaved }) {
       setPreview('');
       api.setRecording(false);
     };
-    const onKey = async (e) => {
+    const onKey = async (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (e.key === 'Escape') return stop();
-      const { mods, key, accel } = eventToAccelerator(e, isMac);
-      if (!key) {
+      const { mods, accel } = eventToAccelerator(e, isMac);
+      // accel === null — нажаты только модификаторы
+      if (!accel) {
         setPreview(formatAccelerator([...mods, '…'].join('+'), isMac));
         return;
       }

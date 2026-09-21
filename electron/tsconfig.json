@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "../dist-electron/.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "node16",
+    "types": ["node"],
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "outDir": "../dist-electron"
+  },
+  "include": ["."]
+}

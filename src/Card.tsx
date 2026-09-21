@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useI18n } from './i18n.js';
-import { DND_TYPE, KIND_COLOR, KIND_LABEL_KEY, defaultTitle, hostOf, kindOf } from './utils.js';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, DragEvent } from 'react';
+import type { Collection, SnippetDraft } from '../electron/types';
+import { useI18n } from './i18n';
+import { DND_TYPE, KIND_COLOR, KIND_LABEL_KEY, defaultTitle, hostOf, kindOf } from './utils';
+import type { CardItem, Kind } from './utils';
 
-function Icon({ kind }) {
+function Icon({ kind }: { kind: Kind | 'snippet' }) {
   if (kind === 'image')
     return (
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
@@ -48,13 +51,20 @@ const PencilIcon = () => (
   </svg>
 );
 
+interface SaveMenuProps {
+  collections: Collection[];
+  onPick: (collectionId: string) => void;
+  onClose: () => void;
+}
+
 // Всплывающий список коллекций для сохранения сниппета
-function SaveMenu({ collections, onPick, onClose }) {
+function SaveMenu({ collections, onPick, onClose }: SaveMenuProps) {
   const { t } = useI18n();
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onDown = (e) => {
-      if (ref.current?.contains(e.target) || e.target.closest('.save-trigger')) return;
+    const onDown = (e: Event) => {
+      const target = e.target as Element;
+      if (ref.current?.contains(target) || target.closest('.save-trigger')) return;
       onClose();
     };
     document.addEventListener('mousedown', onDown);
@@ -77,11 +87,32 @@ function SaveMenu({ collections, onPick, onClose }) {
   );
 }
 
+interface Props {
+  item: CardItem;
+  index: number;
+  isDev: boolean;
+  collection?: Collection | null; // задана, если карточка — сниппет коллекции
+  collections: Collection[];
+  selected: boolean;
+  hotkey: string | null;
+  reorderable: boolean;
+  dragId: string | null;
+  onDragId: (id: string | null) => void;
+  onDropBefore: (beforeId: string) => void;
+  onSelect: () => void;
+  onPaste: () => void;
+  onCopy: () => void;
+  onRemove: () => void;
+  onNativeDrag: () => void;
+  onRename: (title: string) => void;
+  onSaveTo: (collectionId: string, snippet: SnippetDraft) => void;
+}
+
 export default function Card({
   item,
   index,
   isDev,
-  collection, // задана, если карточка — сниппет коллекции
+  collection,
   collections,
   selected,
   hotkey,
@@ -96,19 +127,22 @@ export default function Card({
   onNativeDrag,
   onRename,
   onSaveTo,
-}) {
+}: Props) {
   const { t, timeAgo } = useI18n();
   const [over, setOver] = useState(false);
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
-  const titleRef = useRef(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
 
-  const isSnippet = !!collection;
-  const kind = isSnippet ? 'snippet' : kindOf(item);
-  const accent = isSnippet ? collection.color : KIND_COLOR[kind];
-  const text = item.text ?? '';
+  const entry = 'type' in item ? item : null; // элемент истории; у сниппета коллекции поля type нет
+  const image = entry?.type === 'image' ? entry : null;
+  const kind = entry ? kindOf(entry) : 'snippet';
+  const isSnippet = kind === 'snippet';
+  const accent = isSnippet ? collection?.color : KIND_COLOR[kind];
+  const text = 'text' in item ? item.text : '';
+  const snippetTitle = 'title' in item ? item.title : '';
 
   useEffect(() => {
     if (editing) titleRef.current?.select();
@@ -116,14 +150,14 @@ export default function Card({
 
   const startRename = () => {
     cancelRef.current = false;
-    setTitle(item.title);
+    setTitle(snippetTitle);
     setEditing(true);
   };
   const finishRename = () => {
     setEditing(false);
     if (cancelRef.current) return;
     const v = title.trim();
-    if (v && v !== item.title) onRename(v);
+    if (v && v !== snippetTitle) onRename(v);
   };
   const cancelRename = () => {
     cancelRef.current = true;
@@ -131,28 +165,28 @@ export default function Card({
   };
 
   // ---- drag ----
-  const onDragStart = (e) => {
+  const onDragStart = (e: DragEvent) => {
     // картинку тащим как файл, кроме случая, когда включена ручная перестановка
-    if (item.type === 'image' && !reorderable) {
+    if (image && !reorderable) {
       e.preventDefault();
       onNativeDrag();
       return;
     }
-    if (item.type !== 'image') {
+    if (!image) {
       e.dataTransfer.setData('text/plain', text);
       e.dataTransfer.effectAllowed = 'copyMove';
     }
     e.dataTransfer.setData(DND_TYPE, item.id);
     onDragId(item.id);
   };
-  const onDragOver = (e) => {
+  const onDragOver = (e: DragEvent) => {
     if (!reorderable || !dragId || dragId === item.id) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setOver(true);
   };
-  const onDrop = (e) => {
+  const onDrop = (e: DragEvent) => {
     if (!reorderable || !dragId) return;
     e.preventDefault();
     e.stopPropagation();
@@ -161,13 +195,13 @@ export default function Card({
     onDragId(null);
   };
 
-  const canSave = isDev && !isSnippet && item.type === 'text';
+  const canSave = isDev && entry?.type === 'text';
 
   return (
     <article
       className={`card ${selected ? 'selected' : ''} ${over ? 'drop-before' : ''} ${isDev ? 'mono' : ''}`}
       data-index={index}
-      style={{ '--accent': accent }}
+      style={{ '--accent': accent } as CSSProperties}
       onClick={onSelect}
       onDoubleClick={onPaste}
       draggable={!editing}
@@ -195,8 +229,8 @@ export default function Card({
                 onDoubleClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <div className="card-title" title={item.title}>
-                {item.title}
+              <div className="card-title" title={snippetTitle}>
+                {snippetTitle}
               </div>
             )
           ) : (
@@ -214,7 +248,7 @@ export default function Card({
       </div>
 
       <div className={`card-body ${kind}`}>
-        {kind === 'image' && <img src={item.thumb} alt="" draggable={false} />}
+        {image && <img src={image.thumb} alt="" draggable={false} />}
         {(kind === 'text' || kind === 'snippet') && (isDev ? <pre>{text.slice(0, 600)}</pre> : <p>{text.slice(0, 600)}</p>)}
         {kind === 'link' && (
           <div className="link-box">
@@ -225,7 +259,7 @@ export default function Card({
       </div>
 
       <div className="card-foot">
-        {kind === 'image' ? <span className="pill">{`${item.width} × ${item.height}`}</span> : <span>{t('chars', text.length)}</span>}
+        {image ? <span className="pill">{`${image.width} × ${image.height}`}</span> : <span>{t('chars', text.length)}</span>}
       </div>
 
       {hotkey && <span className="hotkey">{hotkey}</span>}

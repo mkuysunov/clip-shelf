@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
+import type { Lang } from '../electron/types';
 
-export const LANGS = [
+export const LANGS: { id: Lang; label: string }[] = [
   { id: 'en', label: 'EN' },
   { id: 'ru', label: 'RU' },
 ];
@@ -20,7 +21,7 @@ const dict = {
     empty: 'History is empty — copy some text or an image',
     emptyCollection: 'No snippets yet — hover a clipboard card and press "+"',
     notFound: 'Nothing found',
-    chars: (n) => `${n.toLocaleString('en')} ${n === 1 ? 'character' : 'characters'}`,
+    chars: (n: number) => `${n.toLocaleString('en')} ${n === 1 ? 'character' : 'characters'}`,
     justNow: 'just now',
     modeDefault: 'Default',
     modeDev: 'Developer',
@@ -46,7 +47,7 @@ const dict = {
     newCollection: 'New collection',
     collectionName: 'Collection name',
     deleteCollection: 'Delete collection',
-    confirmDeleteCollection: (name, n) => `Delete "${name}" with ${n} snippet(s)?`,
+    confirmDeleteCollection: (name: string, n: number) => `Delete "${name}" with ${n} snippet(s)?`,
     addToCollection: 'Save to collection',
     noCollections: 'Create a collection first (+ in the tab bar)',
     rename: 'Rename',
@@ -86,9 +87,9 @@ const dict = {
     empty: 'История пуста — скопируйте текст или картинку',
     emptyCollection: 'Пока пусто — наведите на карточку истории и нажмите «+»',
     notFound: 'Ничего не найдено',
-    chars: (n) => {
+    chars: (n: number) => {
       const f = new Intl.PluralRules('ru').select(n);
-      const forms = { one: 'символ', few: 'символа', many: 'символов', other: 'символа' };
+      const forms: Record<string, string> = { one: 'символ', few: 'символа', many: 'символов', other: 'символа' };
       return `${n.toLocaleString('ru')} ${forms[f]}`;
     },
     justNow: 'только что',
@@ -116,7 +117,7 @@ const dict = {
     newCollection: 'Новая коллекция',
     collectionName: 'Название коллекции',
     deleteCollection: 'Удалить коллекцию',
-    confirmDeleteCollection: (name, n) => `Удалить «${name}» и ${n} сниппет(ов)?`,
+    confirmDeleteCollection: (name: string, n: number) => `Удалить «${name}» и ${n} сниппет(ов)?`,
     addToCollection: 'Сохранить в коллекцию',
     noCollections: 'Сначала создайте коллекцию («+» на панели вкладок)',
     rename: 'Переименовать',
@@ -144,15 +145,20 @@ const dict = {
   },
 };
 
-export function makeT(lang) {
-  const d = dict[lang] || dict.en;
+type Dict = typeof dict.en;
+export type DictKey = keyof Dict;
+// аргументы t(): у строк их нет, у функций-шаблонов — их параметры
+type Args<K extends DictKey> = Dict[K] extends (...args: infer A) => string ? A : [];
+
+export function makeT(lang: Lang) {
+  const d: Dict = dict[lang] || dict.en; // заодно проверяет, что в каждом словаре есть все ключи en
   const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
   return {
-    t: (key, ...args) => {
-      const v = d[key] ?? dict.en[key] ?? key;
+    t: <K extends DictKey>(key: K, ...args: Args<K>): string => {
+      const v = (d[key] ?? dict.en[key] ?? key) as string | ((...a: unknown[]) => string);
       return typeof v === 'function' ? v(...args) : v;
     },
-    timeAgo(ts) {
+    timeAgo(ts: number) {
       const sec = Math.round((ts - Date.now()) / 1000);
       const abs = Math.abs(sec);
       if (abs < 45) return d.justNow;

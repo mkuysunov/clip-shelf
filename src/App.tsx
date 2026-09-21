@@ -1,26 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import Card from './Card.jsx';
-import Toolbar from './Toolbar.jsx';
-import { I18nContext, makeT } from './i18n.js';
-import { DND_TYPE, kindOf } from './utils.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent, WheelEvent } from 'react';
+import type { Collection, HistoryItem, Settings } from '../electron/types';
+import Card from './Card';
+import Toolbar from './Toolbar';
+import { I18nContext, makeT } from './i18n';
+import { DND_TYPE, kindOf } from './utils';
+import type { CardItem, Filter } from './utils';
 
 const api = window.clip;
 const isMac = api?.platform === 'darwin';
 const HISTORY_TAB = 'history';
 
 export default function App() {
-  const [items, setItems] = useState([]);
-  const [collections, setCollections] = useState([]);
-  const [settings, setSettings] = useState({ lang: 'en', mode: 'default', sort: 'newest', position: 'bottom' });
+  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [settings, setSettings] = useState<Pick<Settings, 'lang' | 'mode' | 'sort' | 'position'>>({ lang: 'en', mode: 'default', sort: 'newest', position: 'bottom' });
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all'); // обычный режим: all / text / link / image
+  const [filter, setFilter] = useState<Filter>('all'); // обычный режим: all / text / link / image
   const [tab, setTab] = useState(HISTORY_TAB); // режим разработчика: history / id коллекции
-  const [selectedId, setSelectedId] = useState(null); // выбор по id — не сбивается при появлении новых элементов
-  const [dragId, setDragId] = useState(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null); // выбор по id — не сбивается при появлении новых элементов
+  const [dragId, setDragId] = useState<string | null>(null);
   const movingRef = useRef(false); // перестановка ждёт ответа main — не принимаем следующую
   const [, tick] = useState(0);
-  const searchRef = useRef(null);
-  const listRef = useRef(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLElement>(null);
 
   const i18n = useMemo(() => makeT(settings.lang), [settings.lang]);
   const { t } = i18n;
@@ -63,7 +66,7 @@ export default function App() {
     if (isDev && tab !== HISTORY_TAB && !collections.some((c) => c.id === tab)) setTab(HISTORY_TAB);
   }, [collections, tab, isDev]);
 
-  const visible = useMemo(() => {
+  const visible = useMemo((): CardItem[] => {
     const q = query.trim().toLowerCase();
     if (activeCollection) {
       return activeCollection.items.filter(
@@ -83,11 +86,11 @@ export default function App() {
   // ручная перестановка возможна: в истории при ручной сортировке, в коллекции — всегда
   const reorderable = activeCollection ? true : settings.sort === 'manual';
   // полный список в порядке хранения — нужен, чтобы при фильтре ставить элемент рядом с видимым соседом
-  const full = activeCollection ? activeCollection.items : items;
+  const full: CardItem[] = activeCollection ? activeCollection.items : items;
 
   // индекс выбранной карточки; если её нет в списке — первая
   const selected = Math.max(0, visible.findIndex((v) => v.id === selectedId));
-  const setSelected = (i) => setSelectedId(visible[Math.min(Math.max(i, 0), visible.length - 1)]?.id ?? null);
+  const setSelected = (i: number) => setSelectedId(visible[Math.min(Math.max(i, 0), visible.length - 1)]?.id ?? null);
 
   useEffect(() => {
     listRef.current
@@ -95,7 +98,7 @@ export default function App() {
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   }, [selected, visible]);
 
-  const moveItem = async (id, beforeId) => {
+  const moveItem = async (id: string, beforeId: string | null) => {
     if (movingRef.current) return;
     movingRef.current = true;
     try {
@@ -104,13 +107,13 @@ export default function App() {
       movingRef.current = false;
     }
   };
-  const removeItem = (id) => (activeCollection ? api.removeSnippet(id) : api.remove(id));
+  const removeItem = (id: string) => (activeCollection ? api.removeSnippet(id) : api.remove(id));
 
   // id элемента, идущего в полном списке сразу после target (null — target последний)
-  const afterInFull = (target) => full[full.findIndex((x) => x.id === target.id) + 1]?.id ?? null;
+  const afterInFull = (target: CardItem) => full[full.findIndex((x) => x.id === target.id) + 1]?.id ?? null;
 
   // сдвинуть выбранную карточку на шаг назад/вперёд по ленте
-  const nudge = (dir) => {
+  const nudge = (dir: number) => {
     const i = selected;
     const j = i + dir;
     if (!reorderable || movingRef.current || j < 0 || j >= visible.length) return;
@@ -120,9 +123,9 @@ export default function App() {
 
   // Клавиатура
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey : e.ctrlKey;
-      const target = e.target;
+      const target = e.target as HTMLElement;
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       const control = target.tagName === 'SELECT' || target.tagName === 'BUTTON';
       const inSearch = target === searchRef.current;
@@ -185,15 +188,15 @@ export default function App() {
   });
 
   // горизонтальную ленту крутим и обычным колесом; вертикальная прокручивается сама
-  const onWheel = (e) => {
-    if (!vertical && Math.abs(e.deltaY) > Math.abs(e.deltaX)) listRef.current.scrollLeft += e.deltaY;
+  const onWheel = (e: WheelEvent<HTMLElement>) => {
+    if (!vertical && Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
   };
 
   // Drop в пустое место ленты — в конец
-  const onListDragOver = (e) => {
+  const onListDragOver = (e: DragEvent) => {
     if (reorderable && dragId) e.preventDefault();
   };
-  const onListDrop = (e) => {
+  const onListDrop = (e: DragEvent) => {
     const id = e.dataTransfer.getData(DND_TYPE);
     if (!reorderable || !id) return;
     e.preventDefault();

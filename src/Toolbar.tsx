@@ -1,6 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useI18n } from './i18n.js';
-import { COLLECTION_COLORS } from './utils.js';
+import { useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import type { Collection } from '../electron/types';
+import { useI18n } from './i18n';
+import { COLLECTION_COLORS } from './utils';
+import type { Filter } from './utils';
 
 const api = window.clip;
 const isMac = api?.platform === 'darwin';
@@ -14,10 +17,15 @@ function SearchIcon() {
   );
 }
 
+interface KindFiltersProps {
+  filter: Filter;
+  onFilter: (filter: Filter) => void;
+}
+
 // Вкладки обычного режима: фильтры по типу
-function KindFilters({ filter, onFilter }) {
+function KindFilters({ filter, onFilter }: KindFiltersProps) {
   const { t } = useI18n();
-  const filters = [
+  const filters: { id: Filter; label: string; dot?: string }[] = [
     { id: 'all', label: t('all') },
     { id: 'text', label: t('text'), dot: 'var(--c-text)' },
     { id: 'link', label: t('links'), dot: 'var(--c-link)' },
@@ -35,12 +43,18 @@ function KindFilters({ filter, onFilter }) {
   );
 }
 
+interface CollectionTabsProps {
+  tab: string;
+  onTab: (id: string) => void;
+  collections: Collection[];
+}
+
 // Вкладки режима разработчика: история + коллекции сниппетов + «+»
-function CollectionTabs({ tab, onTab, collections }) {
+function CollectionTabs({ tab, onTab, collections }: CollectionTabsProps) {
   const { t } = useI18n();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
 
   useEffect(() => {
@@ -57,7 +71,7 @@ function CollectionTabs({ tab, onTab, collections }) {
     onTab(id);
   };
 
-  const remove = async (c) => {
+  const remove = async (c: Collection) => {
     if (await api.confirm(t('confirmDeleteCollection', c.name, c.items.length))) api.removeCollection(c.id);
   };
 
@@ -131,6 +145,16 @@ function SettingsButton() {
   );
 }
 
+interface Props extends KindFiltersProps, CollectionTabsProps {
+  searchRef: RefObject<HTMLInputElement>;
+  query: string;
+  onQuery: (query: string) => void;
+  isDev: boolean;
+  showingHistory: boolean;
+  count: number;
+  onClear: () => void;
+}
+
 export default function Toolbar({
   searchRef,
   query,
@@ -144,7 +168,7 @@ export default function Toolbar({
   showingHistory,
   count,
   onClear,
-}) {
+}: Props) {
   const { t } = useI18n();
 
   return (

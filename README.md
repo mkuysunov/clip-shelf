@@ -3,16 +3,20 @@
 # ClipShelf
 
 Лёгкий менеджер истории буфера обмена в стиле [Paste](https://pasteapp.io): текст, ссылки и изображения.
-Electron + React + Vite. Интерфейс на русском и английском.
+Electron + React + Vite + TypeScript. Интерфейс на русском и английском.
 
 ## Запуск
 
 ```bash
 npm install
-npm run dev      # разработка (Vite + Electron с hot reload интерфейса)
-npm start        # собрать интерфейс и запустить
-npm run dist     # собрать .dmg в папку release/
+npm run dev        # разработка (Vite + Electron с hot reload интерфейса)
+npm run typecheck  # проверка типов (заодно компилирует electron/ в dist-electron/)
+npm start          # проверить типы, собрать и запустить
+npm run dist       # собрать .dmg в папку release/
 ```
+
+Main и preload Electron не умеет запускать из `.ts`, поэтому `tsc` компилирует `electron/` в `dist-electron/`
+(`npm run dev` делает это один раз при старте — после правок в `electron/` dev нужно перезапустить).
 
 Приложение живёт в строке меню (иконка планшета), без иконки в Dock.
 
@@ -89,7 +93,7 @@ npm run dist     # собрать .dmg в папку release/
 
 ## Настройки
 
-В начале `electron/main.js`: сочетание по умолчанию, лимит элементов (300), интервал опроса буфера,
+В начале `electron/main.ts`: сочетание по умолчанию, лимит элементов (300), интервал опроса буфера,
 высота панели (снизу / сверху) и её ширина (слева / справа).
 
 ## Когда панель закрывается сама
@@ -99,11 +103,14 @@ npm run dist     # собрать .dmg в папку release/
 
 ## Как это устроено
 
-- **main** (`electron/main.js`): каждые 500 мс опрашивает буфер (у Electron нет события «буфер изменился»),
+- **main** (`electron/main.ts`): каждые 500 мс опрашивает буфер (у Electron нет события «буфер изменился»),
   дедуплицирует по хэшу, хранит историю, регистрирует глобальный хоткей, показывает панель у выбранного
   края экрана под курсором, эмулирует `⌘V` через `osascript`.
-- **preload** (`electron/preload.js`): безопасный мост `window.clip` для интерфейса.
-- **renderer** (`src/`): React-интерфейс — `App.jsx` (состояние, клавиатура, drag-and-drop),
-  `Toolbar.jsx` (поиск, вкладки, кнопка настроек), `Settings.jsx` (окно настроек, открывается по `#settings`),
-  `HotkeyField.jsx` (запись сочетания), `Onboarding.jsx` (окно приветствия, открывается по `#onboarding`), `Card.jsx` (карточка истории / сниппета), `i18n.js` (словари ru/en).
+- **preload** (`electron/preload.ts`): безопасный мост `window.clip` для интерфейса.
+- **типы** (`electron/types.ts`): общий контракт main ↔ preload ↔ renderer — элементы истории, коллекции, настройки
+  и интерфейс `ClipApi` моста `window.clip`. Только типы (`import type`): preload работает в sandbox и не может
+  подключать локальные модули.
+- **renderer** (`src/`): React-интерфейс — `App.tsx` (состояние, клавиатура, drag-and-drop),
+  `Toolbar.tsx` (поиск, вкладки, кнопка настроек), `Settings.tsx` (окно настроек, открывается по `#settings`),
+  `HotkeyField.tsx` (запись сочетания), `Onboarding.tsx` (окно приветствия, открывается по `#onboarding`), `Card.tsx` (карточка истории / сниппета), `i18n.ts` (словари ru/en).
 - **иконка**: `build/icon.png` (1024×1024) — electron-builder сам делает из неё `.icns`.

@@ -1,17 +1,26 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { I18nContext, LANGS, makeT } from './i18n.js';
-import HotkeyField from './HotkeyField.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { Position, Settings as AppSettings, SettingsPatch } from '../electron/types';
+import { I18nContext, LANGS, makeT } from './i18n';
+import type { DictKey } from './i18n';
+import HotkeyField from './HotkeyField';
 
 const api = window.clip;
-const POSITIONS = [
+const POSITIONS: { id: Position; labelKey: DictKey }[] = [
   { id: 'bottom', labelKey: 'posBottom' },
   { id: 'top', labelKey: 'posTop' },
   { id: 'left', labelKey: 'posLeft' },
   { id: 'right', labelKey: 'posRight' },
 ];
 
+interface SegmentProps<T extends string> {
+  options: { id: T; label: string }[];
+  value: T;
+  onPick: (id: T) => void;
+}
+
 // Переключатель из нескольких вариантов
-function Segment({ options, value, onPick }) {
+function Segment<T extends string>({ options, value, onPick }: SegmentProps<T>) {
   return (
     <div className="segment">
       {options.map((o) => (
@@ -23,8 +32,15 @@ function Segment({ options, value, onPick }) {
   );
 }
 
+interface RowProps {
+  title: string;
+  hint?: string;
+  stack?: boolean;
+  children: ReactNode;
+}
+
 // Строка настройки: название и пояснение слева, элемент управления справа (stack — под названием)
-function Row({ title, hint, stack, children }) {
+function Row({ title, hint, stack, children }: RowProps) {
   return (
     <div className={`set-row ${stack ? 'stack' : ''}`}>
       <div className="set-text">
@@ -37,7 +53,7 @@ function Row({ title, hint, stack, children }) {
 }
 
 export default function Settings() {
-  const [settings, setSettings] = useState(null); // null, пока не пришли из main — чтобы не мигать чужим языком
+  const [settings, setSettings] = useState<AppSettings | null>(null); // null, пока не пришли из main — чтобы не мигать чужим языком
   const [login, setLogin] = useState(false);
   const i18n = useMemo(() => makeT(settings?.lang ?? 'en'), [settings?.lang]);
   const { t } = i18n;
@@ -47,7 +63,7 @@ export default function Settings() {
     api.getLoginItem().then(setLogin);
     const offs = [api.onSettings(setSettings), api.onLoginItem(setLogin)];
     // HotkeyField во время записи сам перехватывает Escape (capture), сюда он тогда не доходит
-    const onKey = (e) => e.key === 'Escape' && window.close();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && window.close();
     window.addEventListener('keydown', onKey);
     return () => {
       offs.forEach((off) => off());
@@ -60,7 +76,7 @@ export default function Settings() {
   }, [settings?.lang]);
 
   if (!settings) return null;
-  const set = (patch) => api.setSettings(patch);
+  const set = (patch: SettingsPatch) => api.setSettings(patch);
 
   return (
     <I18nContext.Provider value={i18n}>
