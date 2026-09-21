@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, WheelEvent } from 'react';
 import type { Collection, HistoryItem, Settings } from '../electron/types';
 import Card from './Card';
+import ResizeHandle from './ResizeHandle';
 import Toolbar from './Toolbar';
 import { I18nContext, makeT } from './i18n';
 import { DND_TYPE, kindOf } from './utils';
@@ -213,6 +214,7 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
       <div className={`panel pos-${position} ${vertical ? 'vertical' : ''} ${isDev ? 'dev' : ''}`}>
+        <ResizeHandle position={position} />
         <Toolbar
           searchRef={searchRef}
           query={query}

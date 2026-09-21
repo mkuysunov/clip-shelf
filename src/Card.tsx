@@ -87,6 +87,20 @@ function SaveMenu({ collections, onPick, onClose }: SaveMenuProps) {
   );
 }
 
+// Панель можно сделать ниже обычной, и карточки сжимаются вместе с ней (выше обычной — растёт масштаб, а не карточки),
+// поэтому число строк текста считаем по факту: сколько целых строк помещается в тело карточки.
+// Один наблюдатель на все карточки; сначала все замеры, потом запись — без лишних layout.
+const clampObserver = new ResizeObserver((entries) => {
+  const jobs = entries.map(({ target, contentRect }) => {
+    const el = target.querySelector<HTMLElement>('p, pre, .link-url');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const room = contentRect.height - el.offsetTop - parseFloat(cs.paddingTop);
+    return { el, lines: Math.max(1, Math.floor(room / parseFloat(cs.lineHeight))) };
+  });
+  for (const job of jobs) if (job) job.el.style.webkitLineClamp = String(job.lines);
+});
+
 interface Props {
   item: CardItem;
   index: number;
@@ -134,6 +148,7 @@ export default function Card({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef(false);
 
   const entry = 'type' in item ? item : null; // элемент истории; у сниппета коллекции поля type нет
@@ -147,6 +162,14 @@ export default function Card({
   useEffect(() => {
     if (editing) titleRef.current?.select();
   }, [editing]);
+
+  // смена режима заменяет <p> на <pre> — наблюдение начинаем заново, чтобы новый элемент получил своё число строк
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    clampObserver.observe(body);
+    return () => clampObserver.unobserve(body);
+  }, [isDev]);
 
   const startRename = () => {
     cancelRef.current = false;
@@ -247,7 +270,7 @@ export default function Card({
         )}
       </div>
 
-      <div className={`card-body ${kind}`}>
+      <div className={`card-body ${kind}`} ref={bodyRef}>
         {image && <img src={image.thumb} alt="" draggable={false} />}
         {(kind === 'text' || kind === 'snippet') && (isDev ? <pre>{text.slice(0, 600)}</pre> : <p>{text.slice(0, 600)}</p>)}
         {kind === 'link' && (

@@ -11,6 +11,8 @@ export interface Settings {
   mode: Mode;
   sort: Sort;
   position: Position;
+  panelHeight: number; // высота панели снизу / сверху — меняется перетаскиванием её края
+  panelWidth: number; // ширина панели слева / справа
   hotkey: string;
   onboarded: boolean;
 }
@@ -98,5 +100,7 @@ export interface ClipApi {
   confirm(message: string): Promise<boolean>;
   hide(): Promise<void>;
   onShown(cb: () => void): Unsubscribe;
+  resizePanel(grab: number): void; // край панели тянут мышью; grab — отступ курсора от этого края внутрь панели
+  resetPanelSize(): void;
   platform: string;
 }

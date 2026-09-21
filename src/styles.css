@@ -51,6 +51,7 @@ body,
 }
 
 .panel {
+  position: relative; /* для .resize-handle */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -70,6 +71,51 @@ body,
 }
 .panel.pos-right {
   border-left-width: 1px;
+}
+
+/* ---------- Ручка размера: полоса вдоль края, обращённого к экрану (см. ResizeHandle.tsx) ---------- */
+.resize-handle {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+}
+.panel.pos-bottom .resize-handle {
+  inset: 0 0 auto;
+  height: 12px;
+}
+.panel.pos-top .resize-handle {
+  inset: auto 0 0;
+  height: 12px;
+}
+.panel.pos-left .resize-handle {
+  inset: 0 0 0 auto;
+  width: 12px;
+}
+.panel.pos-right .resize-handle {
+  inset: 0 auto 0 0;
+  width: 12px;
+}
+.panel.vertical .resize-handle {
+  cursor: ew-resize;
+}
+.resize-handle::after {
+  content: '';
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+}
+.panel.vertical .resize-handle::after {
+  width: 4px;
+  height: 40px;
+}
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  opacity: 1;
 }
 
 /* ---------- Верхняя панель ---------- */
@@ -263,7 +309,12 @@ body,
 
 .card {
   position: relative;
-  flex: 0 0 250px;
+  /* панель ниже обычной — карточка сжимается вместе с ней, сохраняя пропорции; при высоте по умолчанию и больше
+     (дальше растёт масштаб, а не раскладка) это те же 250px */
+  flex: 0 0 auto;
+  aspect-ratio: 250 / 273;
+  min-width: 200px;
+  content-visibility: auto; /* карточки за краем ленты не раскладываются — иначе при смене размера панели переверстывались бы все сразу */
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -343,6 +394,7 @@ body,
   overflow: hidden;
   position: relative;
 }
+/* -webkit-line-clamp ниже — запасное значение: число строк выставляет Card.tsx по фактической высоте карточки */
 .card-body.text p {
   margin: 0;
   padding: 12px 14px 0; /* без нижнего отступа: иначе в нём видна строка после обрезки line-clamp */
@@ -388,6 +440,7 @@ body,
 }
 .link-url {
   font-size: 12.5px;
+  line-height: 1.3; /* явная высота строки — по ней считается, сколько строк помещается */
   color: var(--muted);
   word-break: break-all;
   display: -webkit-box;
@@ -528,15 +581,8 @@ body,
 }
 .panel.vertical .card {
   flex: 0 0 230px;
-}
-.panel.vertical .card-body.text p {
-  -webkit-line-clamp: 6;
-}
-.panel.vertical .card-body pre {
-  -webkit-line-clamp: 7;
-}
-.panel.vertical .link-url {
-  -webkit-line-clamp: 3;
+  aspect-ratio: auto;
+  min-width: 0;
 }
 .panel.vertical .card.drop-before {
   box-shadow: 0 -5px 0 var(--select), 0 6px 18px rgba(0, 0, 0, 0.08);

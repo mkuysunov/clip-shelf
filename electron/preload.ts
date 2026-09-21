@@ -1,5 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import type { ClipApi } from './types';
+
+// Масштаб интерфейса панели следует за её размером (main, applyPanelBounds). webFrame меняет масштаб только этого окна.
+ipcRenderer.on('panel:zoom', (_e, zoom: number) => webFrame.setZoomFactor(zoom));
 
 function subscribe<T>(channel: string, cb: (data: T) => void) {
   const handler = (_e: Electron.IpcRendererEvent, data: T) => cb(data);
@@ -54,6 +57,8 @@ const api: ClipApi = {
   confirm: (message) => ipcRenderer.invoke('dialog:confirm', message),
   hide: () => ipcRenderer.invoke('panel:hide'),
   onShown: (cb) => subscribe('panel:shown', cb),
+  resizePanel: (grab) => ipcRenderer.send('panel:resize', grab),
+  resetPanelSize: () => ipcRenderer.send('panel:resize-reset'),
   platform: process.platform,
 };
 

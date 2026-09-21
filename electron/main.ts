@@ -34,8 +34,12 @@ import type {
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+V';
 const MAX_ITEMS = 300; // сколько элементов хранить
 const POLL_MS = 500; // как часто проверять буфер
-const PANEL_HEIGHT = 360; // высота панели при расположении снизу / сверху
-const PANEL_WIDTH = 360; // ширина панели при расположении слева / справа
+// Размер панели поперёк края экрана: base — по умолчанию; край можно тянуть мышью от min до доли экрана maxShare —
+// панель должна оставаться компактной. Больше base она становится не вместительнее, а крупнее (см. applyPanelBounds).
+const PANEL_HEIGHT = { base: 360, min: 260, maxShare: 0.4 }; // панель снизу / сверху
+const PANEL_WIDTH = { base: 360, min: 300, maxShare: 0.3 }; // панель слева / справа
+const MIN_PANEL_GROWTH = 1.25; // на небольшом экране доля maxShare меньше base — увеличить панель можно хотя бы во столько раз
+type PanelLimits = typeof PANEL_HEIGHT;
 const THUMB_WIDTH = 480; // ширина превью картинок
 const SUPPORTED_LANGS: Lang[] = ['en', 'ru'];
 
@@ -53,7 +57,7 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let history: HistoryItem[] = []; // порядок массива = ручной порядок
 let collections: Collection[] = []; // коллекции сниппетов для режима разработчика
-let settings = {} as Settings; // { lang, mode, sort, position, hotkey, onboarded } — заполняется в loadAll()
+let settings = {} as Settings; // { lang, mode, sort, position, panelHeight, panelWidth, hotkey, onboarded } — заполняется в loadAll()
 let onboardingWin: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let hotkeyRegistered: string | null = null; // текущий зарегистрированный accelerator
@@ -157,6 +161,10 @@ function validHotkey(a: unknown): a is string {
   return /(CommandOrControl|Command|Control|Alt)\+/.test(a); // одного Shift недостаточно
 }
 
+// верхнюю границу размера панели задаёт экран, на котором она открыта — см. fitPanelSize()
+const panelSize = (v: unknown, { base, min }: PanelLimits) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.round(v)) : base;
+
 function normalizeSettings(raw: unknown): Settings {
   const s: Partial<Record<keyof Settings, unknown>> = raw && typeof raw === 'object' ? raw : {};
   return {
@@ -164,6 +172,8 @@ function normalizeSettings(raw: unknown): Settings {
     mode: isOneOf(MODES, s.mode) ? s.mode : 'default',
     sort: isOneOf(SORTS, s.sort) ? s.sort : 'newest',
     position: isOneOf(POSITIONS, s.position) ? s.position : 'bottom',
+    panelHeight: panelSize(s.panelHeight, PANEL_HEIGHT),
+    panelWidth: panelSize(s.panelWidth, PANEL_WIDTH),
     hotkey: validHotkey(s.hotkey) ? s.hotkey : DEFAULT_HOTKEY,
     onboarded: s.onboarded === true,
   };
@@ -314,7 +324,7 @@ function poll() {
 function createWindow() {
   win = new BrowserWindow({
     width: 1200,
-    height: PANEL_HEIGHT,
+    height: PANEL_HEIGHT.base,
     show: false,
     frame: false,
     resizable: false,
@@ -443,10 +453,18 @@ function showOnboarding() {
   });
 }
 
-// Границы панели у выбранного края экрана (на маленьких экранах — не больше рабочей области)
+// Размер панели поперёк её края: от min до доли maxShare рабочей области. На экране ноутбука эта доля меньше размера
+// по умолчанию (40 % от 873 px — это 349), поэтому потолок не опускается ниже base × MIN_PANEL_GROWTH: увеличение
+// панели укрупняет интерфейс (см. applyPanelBounds) и должно оставаться доступным людям со слабым зрением на любом экране.
+function fitPanelSize(size: number, { base, min, maxShare }: PanelLimits, area: number) {
+  const max = Math.max(Math.floor(area * maxShare), Math.round(base * MIN_PANEL_GROWTH));
+  return Math.min(area, Math.max(min, Math.min(size, max)));
+}
+
+// Границы панели у выбранного края экрана
 function panelBounds({ x, y, width, height }: Rectangle): Rectangle {
-  const w = Math.min(PANEL_WIDTH, width);
-  const h = Math.min(PANEL_HEIGHT, height);
+  const w = fitPanelSize(settings.panelWidth, PANEL_WIDTH, width);
+  const h = fitPanelSize(settings.panelHeight, PANEL_HEIGHT, height);
   switch (settings.position) {
     case 'top':
       return { x, y, width, height: h };
@@ -459,11 +477,22 @@ function panelBounds({ x, y, width, height }: Rectangle): Rectangle {
   }
 }
 
+// Ставит панель к краю экрана и подбирает масштаб интерфейса. Панель больше размера по умолчанию — это та же компактная
+// раскладка, только крупнее (текст, карточки, кнопки), а не больше мелких строк; меньше — масштаб 1, карточки просто ниже.
+// Масштаб применяет preload через webFrame: webContents.setZoomFactor действует на весь origin и увеличил бы и окно настроек.
+function applyPanelBounds(workArea: Rectangle) {
+  if (!win) return;
+  const bounds = panelBounds(workArea);
+  const vertical = settings.position === 'left' || settings.position === 'right';
+  send('panel:zoom', Math.max(1, vertical ? bounds.width / PANEL_WIDTH.base : bounds.height / PANEL_HEIGHT.base));
+  win.setBounds(bounds);
+}
+
 function showPanel() {
   if (!win) return;
   const cursor = screen.getCursorScreenPoint();
   const { workArea } = screen.getDisplayNearestPoint(cursor);
-  win.setBounds(panelBounds(workArea));
+  applyPanelBounds(workArea);
   send('panel:shown');
   win.show();
   win.focus();
@@ -591,6 +620,36 @@ ipcMain.handle('dialog:confirm', async (_e, message: string) => {
   }
 });
 
+// ---------- IPC: размер панели ----------
+// size — новый размер поперёк края экрана, null — вернуть размер по умолчанию
+function setPanelSize(size: number | null) {
+  if (!win || !win.isVisible()) return;
+  const { workArea } = screen.getDisplayMatching(win.getBounds());
+  if (settings.position === 'left' || settings.position === 'right') {
+    settings.panelWidth = fitPanelSize(size ?? PANEL_WIDTH.base, PANEL_WIDTH, workArea.width);
+  } else {
+    settings.panelHeight = fitPanelSize(size ?? PANEL_HEIGHT.base, PANEL_HEIGHT, workArea.height);
+  }
+  applyPanelBounds(workArea);
+  saveSettings();
+}
+
+// Край панели тянут мышью. Курсор читаем здесь, а не берём из события рендерера: окно в этот момент само
+// двигается, экранные координаты в рендерере запаздывают, и панель дрожала бы.
+ipcMain.on('panel:resize', (_e, grab: number) => {
+  if (!win || !win.isVisible()) return;
+  const { x, y, width, height } = screen.getDisplayMatching(win.getBounds()).workArea;
+  const cursor = screen.getCursorScreenPoint();
+  const sizes: Record<Position, number> = {
+    bottom: y + height - cursor.y,
+    top: cursor.y - y,
+    left: cursor.x - x,
+    right: x + width - cursor.x,
+  };
+  setPanelSize(sizes[settings.position] + (Number.isFinite(grab) ? grab : 0));
+});
+ipcMain.on('panel:resize-reset', () => setPanelSize(null));
+
 // ---------- IPC: настройки ----------
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
@@ -601,7 +660,7 @@ ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
   broadcastSettings();
   // позицию сменили из открытой панели — сразу переезжаем к новому краю того же экрана
   if (settings.position !== prevPosition && win?.isVisible()) {
-    win.setBounds(panelBounds(screen.getDisplayMatching(win.getBounds()).workArea));
+    applyPanelBounds(screen.getDisplayMatching(win.getBounds()).workArea);
   }
   if (tray) tray.setContextMenu(buildTrayMenu());
 });
