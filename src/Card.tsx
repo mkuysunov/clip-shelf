@@ -45,6 +45,12 @@ const CloseIcon = () => (
     <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
+const DeviceIcon = () => (
+  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden>
+    <rect x="7" y="3" width="10" height="18" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M11 17.5h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
 const PencilIcon = () => (
   <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
     <path d="M4 20h4l10-10-4-4L4 16v4zM13 7l4 4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
@@ -259,7 +265,14 @@ export default function Card({
           ) : (
             <>
               <div className="card-title">{t(KIND_LABEL_KEY[kind])}</div>
-              <div className="card-time">{timeAgo(item.createdAt)}</div>
+              <div className="card-time">
+                {timeAgo(item.createdAt)}
+                {entry?.remote && (
+                  <span className="card-remote" title={t('fromOtherDevice')}>
+                    <DeviceIcon />
+                  </span>
+                )}
+              </div>
             </>
           )}
         </div>

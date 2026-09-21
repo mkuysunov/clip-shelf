@@ -23,6 +23,7 @@ const dict = {
     notFound: 'Nothing found',
     chars: (n: number) => `${n.toLocaleString('en')} ${n === 1 ? 'character' : 'characters'}`,
     justNow: 'just now',
+    fromOtherDevice: 'Copied on another device',
     modeDefault: 'Default',
     modeDev: 'Developer',
     modeTitle: 'Panel mode',
@@ -94,6 +95,7 @@ const dict = {
       return `${n.toLocaleString('ru')} ${forms[f]}`;
     },
     justNow: 'только что',
+    fromOtherDevice: 'Скопировано на другом устройстве',
     modeDefault: 'Обычный',
     modeDev: 'Разработчик',
     modeTitle: 'Режим панели',

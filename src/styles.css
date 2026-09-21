@@ -359,6 +359,11 @@ body,
   opacity: 0.9;
   margin-top: 1px;
 }
+.card-remote {
+  display: inline-flex;
+  margin-left: 5px;
+  vertical-align: -1.5px;
+}
 .card-icon {
   opacity: 0.95;
 }

@@ -22,6 +22,7 @@ interface ItemBase {
   id: string;
   sig: string;
   createdAt: number;
+  remote?: boolean; // скопировано на другом устройстве Apple — пришло через Universal Clipboard
 }
 export interface TextItem extends ItemBase {
   type: 'text';

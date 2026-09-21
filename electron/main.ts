@@ -248,6 +248,7 @@ function pushItem(item: HistoryItem) {
   const existing = history.find((i) => i.sig === item.sig);
   if (existing) {
     existing.createdAt = Date.now();
+    existing.remote = item.remote; // как и время, пометка «с другого устройства» относится к последнему копированию
     // при ручной сортировке порядок не трогаем, иначе поднимаем наверх
     if (settings.sort !== 'manual') {
       history = [existing, ...history.filter((i) => i !== existing)];
@@ -272,7 +273,12 @@ function imageSignature(img: NativeImage) {
   return `img:${width}x${height}:${hash(sample)}`;
 }
 
-type ClipboardContent = { type: 'text'; text: string; sig: string } | { type: 'image'; img: NativeImage; sig: string };
+type ClipboardContent = ({ type: 'text'; text: string } | { type: 'image'; img: NativeImage }) & { sig: string; remote: boolean };
+
+// Universal Clipboard: скопированное на iPhone / iPad / другом Mac macOS сама кладёт в обычный pasteboard
+// и помечает этим типом. Отдельно забирать ничего не нужно — опрос видит такие копии как любые другие.
+const REMOTE_CLIPBOARD_TYPE = 'com.apple.is-remote-clipboard';
+const isRemoteClipboard = () => isMac && clipboard.has(REMOTE_CLIPBOARD_TYPE);
 
 function readCurrent(): ClipboardContent | null {
   const formats = clipboard.availableFormats();
@@ -280,11 +286,11 @@ function readCurrent(): ClipboardContent | null {
 
   if (formats.includes('text/plain')) {
     const text = clipboard.readText();
-    if (text && text.trim()) return { type: 'text', text, sig: `txt:${hash(text)}` };
+    if (text && text.trim()) return { type: 'text', text, sig: `txt:${hash(text)}`, remote: isRemoteClipboard() };
   }
   if (formats.some((f) => f.startsWith('image/'))) {
     const img = clipboard.readImage();
-    if (!img.isEmpty()) return { type: 'image', img, sig: imageSignature(img) };
+    if (!img.isEmpty()) return { type: 'image', img, sig: imageSignature(img), remote: isRemoteClipboard() };
   }
   return null;
 }
@@ -301,7 +307,7 @@ function poll() {
   lastSignature = cur.sig;
 
   const id = crypto.randomUUID();
-  const base = { id, sig: cur.sig, createdAt: Date.now() };
+  const base = { id, sig: cur.sig, createdAt: Date.now(), remote: cur.remote || undefined };
 
   if (cur.type === 'text') {
     pushItem({ ...base, type: 'text', text: cur.text });
@@ -310,7 +316,7 @@ function poll() {
   // такая картинка уже есть в истории — файл и превью заново не создаём, pushItem просто поднимет её наверх
   const known = history.find((i) => i.sig === cur.sig);
   if (known) {
-    pushItem(known);
+    pushItem({ ...known, remote: base.remote });
     return;
   }
   const { width, height } = cur.img.getSize();
