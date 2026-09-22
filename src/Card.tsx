@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent } from 'react';
-import type { Collection, SnippetDraft } from '../electron/types';
+import type { CSSProperties, DragEvent, MouseEvent } from 'react';
+import type { Collection, MenuEntry, SnippetDraft } from '../electron/types';
 import { useI18n } from './i18n';
 import { DND_TYPE, KIND_COLOR, KIND_LABEL_KEY, defaultTitle, hostOf, kindOf } from './utils';
 import type { CardItem, Kind } from './utils';
+
+const api = window.clip;
 
 function Icon({ kind }: { kind: Kind | 'snippet' }) {
   if (kind === 'image')
@@ -49,6 +51,12 @@ const DeviceIcon = () => (
   <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden>
     <rect x="7" y="3" width="10" height="18" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
     <path d="M11 17.5h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+const PinIcon = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden>
+    <path d="M8 3h8v2h-1.5l.8 5.2L18 13v1.5H6V13l2.7-2.8L9.5 5H8z" fill="currentColor" />
+    <path d="M12 14.5V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 const PencilIcon = () => (
@@ -123,6 +131,7 @@ interface Props {
   onPaste: () => void;
   onCopy: () => void;
   onRemove: () => void;
+  onPin: (pinned: boolean) => void;
   onNativeDrag: () => void;
   onRename: (title: string) => void;
   onSaveTo: (collectionId: string, snippet: SnippetDraft) => void;
@@ -144,6 +153,7 @@ export default function Card({
   onPaste,
   onCopy,
   onRemove,
+  onPin,
   onNativeDrag,
   onRename,
   onSaveTo,
@@ -224,6 +234,30 @@ export default function Card({
     onDragId(null);
   };
 
+  // ---- контекстное меню ----
+  const onContextMenu = async (e: MouseEvent) => {
+    e.preventDefault();
+    if (editing) return;
+    onSelect();
+    const entries: MenuEntry[] = [
+      entry ? { id: 'pin', label: t(entry.pinned ? 'unpin' : 'pin') } : { id: 'rename', label: t('rename') },
+      'separator',
+      { id: 'paste', label: t('paste') },
+      { id: 'copy', label: t('copy') },
+      'separator',
+      { id: 'delete', label: t('delete') },
+    ];
+    const actions: Record<string, () => void> = {
+      pin: () => onPin(!entry?.pinned),
+      rename: startRename,
+      paste: onPaste,
+      copy: onCopy,
+      delete: onRemove,
+    };
+    const picked = await api.showMenu(entries);
+    if (picked) actions[picked]?.();
+  };
+
   const canSave = isDev && entry?.type === 'text';
 
   return (
@@ -233,6 +267,7 @@ export default function Card({
       style={{ '--accent': accent } as CSSProperties}
       onClick={onSelect}
       onDoubleClick={onPaste}
+      onContextMenu={onContextMenu}
       draggable={!editing}
       onDragStart={onDragStart}
       onDragEnd={() => onDragId(null)}
@@ -264,7 +299,14 @@ export default function Card({
             )
           ) : (
             <>
-              <div className="card-title">{t(KIND_LABEL_KEY[kind])}</div>
+              <div className="card-title">
+                {t(KIND_LABEL_KEY[kind])}
+                {entry?.pinned && (
+                  <span className="card-pin" title={t('pinned')}>
+                    <PinIcon />
+                  </span>
+                )}
+              </div>
               <div className="card-time">
                 {timeAgo(item.createdAt)}
                 {entry?.remote && (

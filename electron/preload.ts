@@ -19,6 +19,7 @@ const api: ClipApi = {
   copy: (id) => ipcRenderer.invoke('item:use', id, false),
   remove: (id) => ipcRenderer.invoke('item:remove', id),
   move: (id, beforeId) => ipcRenderer.invoke('item:move', id, beforeId),
+  pin: (id, pinned) => ipcRenderer.invoke('item:pin', id, pinned),
   clear: () => ipcRenderer.invoke('history:clear'),
   startDrag: (id) => ipcRenderer.send('item:drag', id),
   onUpdate: (cb) => subscribe('history:update', cb),
@@ -55,6 +56,7 @@ const api: ClipApi = {
 
   // панель
   confirm: (message) => ipcRenderer.invoke('dialog:confirm', message),
+  showMenu: (entries) => ipcRenderer.invoke('menu:popup', entries),
   hide: () => ipcRenderer.invoke('panel:hide'),
   onShown: (cb) => subscribe('panel:shown', cb),
   resizePanel: (grab) => ipcRenderer.send('panel:resize', grab),

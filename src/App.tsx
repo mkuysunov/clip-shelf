@@ -79,9 +79,11 @@ export default function App() {
       if (!q) return true;
       return it.type === 'text' && it.text.toLowerCase().includes(q);
     });
-    if (settings.sort === 'newest') return [...list].sort((a, b) => b.createdAt - a.createdAt);
-    if (settings.sort === 'oldest') return [...list].sort((a, b) => a.createdAt - b.createdAt);
-    return list; // manual — порядок массива истории
+    // закреплённые всегда в начале ленты; sort стабильна, поэтому внутри групп ручной порядок сохраняется
+    const pinFirst = (a: HistoryItem, b: HistoryItem) => Number(!!b.pinned) - Number(!!a.pinned);
+    if (settings.sort === 'newest') return [...list].sort((a, b) => pinFirst(a, b) || b.createdAt - a.createdAt);
+    if (settings.sort === 'oldest') return [...list].sort((a, b) => pinFirst(a, b) || a.createdAt - b.createdAt);
+    return [...list].sort(pinFirst); // manual — порядок массива истории
   }, [items, activeCollection, query, filter, isDev, settings.sort]);
 
   // ручная перестановка возможна: в истории при ручной сортировке, в коллекции — всегда
@@ -262,6 +264,7 @@ export default function App() {
                 onPaste={() => api.paste(item.id)}
                 onCopy={() => api.copy(item.id)}
                 onRemove={() => removeItem(item.id)}
+                onPin={(pinned) => api.pin(item.id, pinned)}
                 onNativeDrag={() => api.startDrag(item.id)}
                 onRename={(title) => api.updateSnippet(item.id, { title })}
                 onSaveTo={(collectionId, snippet) => api.addSnippet(collectionId, snippet)}

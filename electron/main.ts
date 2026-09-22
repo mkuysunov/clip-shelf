@@ -12,7 +12,7 @@ import {
   systemPreferences,
   powerMonitor,
 } from 'electron';
-import type { MessageBoxOptions, NativeImage, Rectangle } from 'electron';
+import type { MenuItemConstructorOptions, MessageBoxOptions, NativeImage, Rectangle } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -22,6 +22,7 @@ import type {
   HistoryItem,
   HotkeyResult,
   Lang,
+  MenuEntry,
   Mode,
   Position,
   Settings,
@@ -255,7 +256,12 @@ function pushItem(item: HistoryItem) {
     }
   } else {
     history.unshift(item);
-    while (history.length > MAX_ITEMS) removeImageFile(history.pop()!);
+    // закреплённые не вытесняются и в лимит не входят
+    const extra = history.filter((i) => !i.pinned).slice(MAX_ITEMS);
+    if (extra.length) {
+      extra.forEach(removeImageFile);
+      history = history.filter((i) => !extra.includes(i));
+    }
   }
   saveHistory();
   broadcastHistory();
@@ -590,6 +596,15 @@ ipcMain.handle('item:move', (_e, id: string, beforeId: string | null) => {
   broadcastHistory();
 });
 
+// Закрепить / открепить. Порядок в массиве не меняется: закреплённые ставит в начало ленты интерфейс
+ipcMain.handle('item:pin', (_e, id: string, pinned: boolean) => {
+  const item = history.find((i) => i.id === id);
+  if (!item) return;
+  item.pinned = pinned === true || undefined;
+  saveHistory();
+  broadcastHistory();
+});
+
 ipcMain.handle('history:clear', () => clearHistory());
 ipcMain.handle('panel:hide', () => hidePanel(true));
 
@@ -624,6 +639,21 @@ ipcMain.handle('dialog:confirm', async (_e, message: string) => {
     dialogOpen = false;
     win?.focus();
   }
+});
+
+// --- IPC: контекстное меню карточки. Нативное, а не HTML: невысокая панель обрезала бы его по своему краю.
+// Возвращает id выбранного пункта, null — меню закрыли без выбора.
+ipcMain.handle('menu:popup', (e, entries: MenuEntry[]) => {
+  return new Promise<string | null>((resolve) => {
+    const template = entries.map((m): MenuItemConstructorOptions =>
+      m === 'separator' ? { type: 'separator' } : { label: String(m.label), click: () => resolve(m.id) }
+    );
+    Menu.buildFromTemplate(template).popup({
+      window: BrowserWindow.fromWebContents(e.sender) ?? undefined,
+      // закрытие меню может прийти раньше click выбранного пункта — даём click отработать первым
+      callback: () => setImmediate(() => resolve(null)),
+    });
+  });
 });
 
 // ---------- IPC: размер панели ----------
@@ -773,9 +803,10 @@ ipcMain.handle('snippet:move', (_e, id: string, beforeId: string | null) => {
   broadcastCollections();
 });
 
+// закреплённые очистка не трогает
 function clearHistory() {
-  history.forEach(removeImageFile);
-  history = [];
+  history.filter((i) => !i.pinned).forEach(removeImageFile);
+  history = history.filter((i) => i.pinned);
   saveHistory();
   broadcastHistory();
 }

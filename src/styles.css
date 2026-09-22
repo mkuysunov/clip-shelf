@@ -364,6 +364,11 @@ body,
   margin-left: 5px;
   vertical-align: -1.5px;
 }
+.card-pin {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: -1px;
+}
 .card-icon {
   opacity: 0.95;
 }

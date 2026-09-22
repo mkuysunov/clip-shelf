@@ -23,6 +23,7 @@ interface ItemBase {
   sig: string;
   createdAt: number;
   remote?: boolean; // скопировано на другом устройстве Apple — пришло через Universal Clipboard
+  pinned?: boolean; // закреплён: в ленте идёт первым, не вытесняется лимитом и не стирается очисткой истории
 }
 export interface TextItem extends ItemBase {
   type: 'text';
@@ -53,6 +54,9 @@ export type SnippetPatch = Partial<SnippetDraft>;
 
 export type HotkeyResult = { ok: true } | { ok: false; error: string };
 
+// пункт контекстного меню карточки; id выбранного пункта возвращает showMenu
+export type MenuEntry = { id: string; label: string } | 'separator';
+
 type Unsubscribe = () => void;
 
 // Мост window.clip (см. preload.ts)
@@ -63,6 +67,7 @@ export interface ClipApi {
   copy(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   move(id: string, beforeId: string | null): Promise<void>;
+  pin(id: string, pinned: boolean): Promise<void>;
   clear(): Promise<void>;
   startDrag(id: string): void;
   onUpdate(cb: (items: HistoryItem[]) => void): Unsubscribe;
@@ -99,6 +104,7 @@ export interface ClipApi {
 
   // панель
   confirm(message: string): Promise<boolean>;
+  showMenu(entries: MenuEntry[]): Promise<string | null>; // нативное контекстное меню; null — закрыли без выбора
   hide(): Promise<void>;
   onShown(cb: () => void): Unsubscribe;
   resizePanel(grab: number): void; // край панели тянут мышью; grab — отступ курсора от этого края внутрь панели
