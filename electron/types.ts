@@ -13,10 +13,11 @@ export interface Settings {
   position: Position;
   panelHeight: number; // высота панели снизу / сверху — меняется перетаскиванием её края
   panelWidth: number; // ширина панели слева / справа
-  hotkey: string;
+  hotkey: string; // открыть панель
+  captureHotkey: string; // распознать текст с экрана (только macOS)
   onboarded: boolean;
 }
-export type SettingsPatch = Partial<Omit<Settings, 'hotkey'>>; // hotkey меняется только через setHotkey
+export type SettingsPatch = Partial<Omit<Settings, 'hotkey' | 'captureHotkey'>>; // сочетания меняются только через setHotkey
 
 interface ItemBase {
   id: string;
@@ -52,6 +53,7 @@ export interface Collection {
 export type SnippetDraft = Pick<Snippet, 'title' | 'text'>;
 export type SnippetPatch = Partial<SnippetDraft>;
 
+export type HotkeyAction = 'panel' | 'capture'; // что делает глобальное сочетание
 export type HotkeyResult = { ok: true } | { ok: false; error: string };
 
 // пункт контекстного меню карточки; id выбранного пункта возвращает showMenu
@@ -68,6 +70,7 @@ export interface ClipApi {
   remove(id: string): Promise<void>;
   move(id: string, beforeId: string | null): Promise<void>;
   pin(id: string, pinned: boolean): Promise<void>;
+  recognize(id: string): Promise<string | null>; // текст с картинки -> новая карточка; её id, null — текста нет
   clear(): Promise<void>;
   startDrag(id: string): void;
   onUpdate(cb: (items: HistoryItem[]) => void): Unsubscribe;
@@ -94,7 +97,7 @@ export interface ClipApi {
   onCollections(cb: (collections: Collection[]) => void): Unsubscribe;
 
   // горячая клавиша
-  setHotkey(accel: string): Promise<HotkeyResult>;
+  setHotkey(accel: string, action?: HotkeyAction): Promise<HotkeyResult>; // по умолчанию — сочетание панели
   setRecording(on: boolean): Promise<void>;
   formatHotkey(accel: string): Promise<string>;
 

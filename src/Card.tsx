@@ -6,6 +6,7 @@ import { DND_TYPE, KIND_COLOR, KIND_LABEL_KEY, defaultTitle, hostOf, kindOf } fr
 import type { CardItem, Kind } from './utils';
 
 const api = window.clip;
+const isMac = api?.platform === 'darwin';
 
 function Icon({ kind }: { kind: Kind | 'snippet' }) {
   if (kind === 'image')
@@ -132,6 +133,7 @@ interface Props {
   onCopy: () => void;
   onRemove: () => void;
   onPin: (pinned: boolean) => void;
+  onRecognize: () => Promise<void>;
   onNativeDrag: () => void;
   onRename: (title: string) => void;
   onSaveTo: (collectionId: string, snippet: SnippetDraft) => void;
@@ -154,6 +156,7 @@ export default function Card({
   onCopy,
   onRemove,
   onPin,
+  onRecognize,
   onNativeDrag,
   onRename,
   onSaveTo,
@@ -162,6 +165,7 @@ export default function Card({
   const [over, setOver] = useState(false);
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false); // идёт распознавание текста на картинке
   const [title, setTitle] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -244,6 +248,7 @@ export default function Card({
       'separator',
       { id: 'paste', label: t('paste') },
       { id: 'copy', label: t('copy') },
+      ...(image && isMac ? [{ id: 'recognize', label: t('recognizeText') }] : []),
       'separator',
       { id: 'delete', label: t('delete') },
     ];
@@ -252,6 +257,14 @@ export default function Card({
       rename: startRename,
       paste: onPaste,
       copy: onCopy,
+      recognize: async () => {
+        setBusy(true);
+        try {
+          await onRecognize();
+        } finally {
+          setBusy(false);
+        }
+      },
       delete: onRemove,
     };
     const picked = await api.showMenu(entries);
@@ -262,7 +275,7 @@ export default function Card({
 
   return (
     <article
-      className={`card ${selected ? 'selected' : ''} ${over ? 'drop-before' : ''} ${isDev ? 'mono' : ''}`}
+      className={`card ${selected ? 'selected' : ''} ${over ? 'drop-before' : ''} ${isDev ? 'mono' : ''} ${busy ? 'busy' : ''}`}
       data-index={index}
       style={{ '--accent': accent } as CSSProperties}
       onClick={onSelect}

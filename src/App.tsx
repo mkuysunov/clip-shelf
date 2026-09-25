@@ -265,6 +265,11 @@ export default function App() {
                 onCopy={() => api.copy(item.id)}
                 onRemove={() => removeItem(item.id)}
                 onPin={(pinned) => api.pin(item.id, pinned)}
+                onRecognize={async () => {
+                  // распознанный текст — новая карточка в начале ленты; выбираем её, чтобы вставить одним Enter
+                  const id = await api.recognize(item.id);
+                  if (id) setSelectedId(id);
+                }}
                 onNativeDrag={() => api.startDrag(item.id)}
                 onRename={(title) => api.updateSnippet(item.id, { title })}
                 onSaveTo={(collectionId, snippet) => api.addSnippet(collectionId, snippet)}

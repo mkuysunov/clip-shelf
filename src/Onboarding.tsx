@@ -8,7 +8,11 @@ const api = window.clip;
 const isMac = api?.platform === 'darwin';
 
 export default function Onboarding() {
-  const [settings, setSettings] = useState<Pick<Settings, 'lang' | 'hotkey'>>({ lang: 'en', hotkey: 'CommandOrControl+Shift+V' });
+  const [settings, setSettings] = useState<Pick<Settings, 'lang' | 'hotkey' | 'captureHotkey'>>({
+    lang: 'en',
+    hotkey: 'CommandOrControl+Shift+V',
+    captureHotkey: 'CommandOrControl+Shift+2',
+  });
   const i18n = useMemo(() => makeT(settings.lang), [settings.lang]);
   const { t } = i18n;
 
@@ -45,6 +49,7 @@ export default function Onboarding() {
           <li>{t('obPoint2')}</li>
           <li>{t('obPoint3')}</li>
           <li>{t('obPoint4')}</li>
+          {isMac && <li>{t('obCapture', formatAccelerator(settings.captureHotkey, isMac))}</li>}
         </ul>
 
         <div className="ob-hotkey">

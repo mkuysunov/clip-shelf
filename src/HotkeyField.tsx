@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { HotkeyAction } from '../electron/types';
 import { useI18n } from './i18n';
 import { eventToAccelerator, formatAccelerator, hasStrongModifier } from './hotkey';
 
@@ -7,11 +8,12 @@ const isMac = api?.platform === 'darwin';
 
 interface Props {
   value: string;
+  action?: HotkeyAction; // какое глобальное сочетание меняем; по умолчанию — открытие панели
   onSaved?: (accel: string) => void;
 }
 
 // Поле «горячая клавиша»: клик -> запись сочетания -> проверка в main
-export default function HotkeyField({ value, onSaved }: Props) {
+export default function HotkeyField({ value, action, onSaved }: Props) {
   const { t } = useI18n();
   const [recording, setRecording] = useState(false);
   const [preview, setPreview] = useState('');
@@ -41,7 +43,7 @@ export default function HotkeyField({ value, onSaved }: Props) {
         setStatus({ ok: false, text: t('hotkeyNoKey') });
         return;
       }
-      const res = await api.setHotkey(accel);
+      const res = await api.setHotkey(accel, action);
       setStatus(res.ok ? { ok: true, text: t('hotkeySaved') } : { ok: false, text: res.error });
       if (res.ok) onSaved?.(accel);
       stop();
@@ -58,7 +60,7 @@ export default function HotkeyField({ value, onSaved }: Props) {
       btn?.removeEventListener('blur', onBlur);
       api.setRecording(false);
     };
-  }, [recording, t, onSaved]);
+  }, [recording, t, action, onSaved]);
 
   useEffect(() => {
     if (!status?.ok) return;

@@ -20,6 +20,7 @@ const api: ClipApi = {
   remove: (id) => ipcRenderer.invoke('item:remove', id),
   move: (id, beforeId) => ipcRenderer.invoke('item:move', id, beforeId),
   pin: (id, pinned) => ipcRenderer.invoke('item:pin', id, pinned),
+  recognize: (id) => ipcRenderer.invoke('item:recognize', id),
   clear: () => ipcRenderer.invoke('history:clear'),
   startDrag: (id) => ipcRenderer.send('item:drag', id),
   onUpdate: (cb) => subscribe('history:update', cb),
@@ -46,7 +47,7 @@ const api: ClipApi = {
   onCollections: (cb) => subscribe('collections:update', cb),
 
   // горячая клавиша
-  setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel), // -> { ok, error? }
+  setHotkey: (accel, action) => ipcRenderer.invoke('hotkey:set', accel, action), // -> { ok, error? }
   setRecording: (on) => ipcRenderer.invoke('hotkey:recording', on),
   formatHotkey: (accel) => ipcRenderer.invoke('hotkey:format', accel),
 

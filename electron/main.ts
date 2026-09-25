@@ -11,15 +11,20 @@ import {
   dialog,
   systemPreferences,
   powerMonitor,
+  desktopCapturer,
+  Notification,
+  shell,
 } from 'electron';
 import type { MenuItemConstructorOptions, MessageBoxOptions, NativeImage, Rectangle } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
+import { recognize } from './ocr';
 import type {
   Collection,
   HistoryItem,
+  HotkeyAction,
   HotkeyResult,
   Lang,
   MenuEntry,
@@ -33,6 +38,7 @@ import type {
 
 // ---------- Настройки ----------
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+V';
+const DEFAULT_CAPTURE_HOTKEY = 'CommandOrControl+Shift+2'; // как у TextSniper; ⌘⇧3/4/5 заняты системными скриншотами
 const MAX_ITEMS = 300; // сколько элементов хранить
 const POLL_MS = 500; // как часто проверять буфер
 // Размер панели поперёк края экрана: base — по умолчанию; край можно тянуть мышью от min до доли экрана maxShare —
@@ -58,10 +64,10 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let history: HistoryItem[] = []; // порядок массива = ручной порядок
 let collections: Collection[] = []; // коллекции сниппетов для режима разработчика
-let settings = {} as Settings; // { lang, mode, sort, position, panelHeight, panelWidth, hotkey, onboarded } — заполняется в loadAll()
+let settings = {} as Settings; // { lang, mode, sort, position, panelHeight, panelWidth, hotkey, captureHotkey, onboarded } — заполняется в loadAll()
 let onboardingWin: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
-let hotkeyRegistered: string | null = null; // текущий зарегистрированный accelerator
+const hotkeysRegistered: Partial<Record<HotkeyAction, string>> = {}; // текущие зарегистрированные accelerator
 let lastSignature: string | null = null;
 let paused = false;
 
@@ -80,6 +86,16 @@ const TRAY_I18N = {
     settings: 'Settings…',
     hkNoKey: 'Press a key together with ⌘, ⌃ or ⌥',
     hkTaken: 'This shortcut is already used by another app or the system',
+    hkDuplicate: 'This shortcut is already used in ClipShelf',
+    capture: 'Capture text from screen',
+    ocrCopied: 'Text copied',
+    ocrEmpty: 'No text found',
+    ocrFailed: 'Could not recognize text',
+    screenTitle: 'Allow screen recording',
+    screenDetail:
+      'To read text from the screen, ClipShelf needs the Screen Recording permission. Turn on ClipShelf in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen ClipShelf.',
+    openSettings: 'Open System Settings',
+    screenDev: 'Development mode: macOS checks the permission of the app ClipShelf was started from — the terminal or VS Code. Turn on that app and restart it.',
   },
   ru: {
     open: 'Открыть историю',
@@ -94,6 +110,16 @@ const TRAY_I18N = {
     settings: 'Настройки…',
     hkNoKey: 'Нажмите клавишу вместе с ⌘, ⌃ или ⌥',
     hkTaken: 'Это сочетание уже занято другим приложением или системой',
+    hkDuplicate: 'Это сочетание уже используется в ClipShelf',
+    capture: 'Распознать текст с экрана',
+    ocrCopied: 'Текст скопирован',
+    ocrEmpty: 'Текст не найден',
+    ocrFailed: 'Не удалось распознать текст',
+    screenTitle: 'Разрешите запись экрана',
+    screenDetail:
+      'Чтобы читать текст с экрана, ClipShelf нужно разрешение «Запись экрана». Включите ClipShelf в Системных настройках → Конфиденциальность и безопасность → Запись экрана и системного звука, затем перезапустите ClipShelf.',
+    openSettings: 'Открыть Системные настройки',
+    screenDev: 'Режим разработки: macOS проверяет разрешение у приложения, из которого запущен ClipShelf, — терминала или VS Code. Включите его и перезапустите.',
   },
 };
 const tr = (key: keyof typeof TRAY_I18N.en) => (TRAY_I18N[settings.lang] || TRAY_I18N.en)[key];
@@ -176,28 +202,40 @@ function normalizeSettings(raw: unknown): Settings {
     panelHeight: panelSize(s.panelHeight, PANEL_HEIGHT),
     panelWidth: panelSize(s.panelWidth, PANEL_WIDTH),
     hotkey: validHotkey(s.hotkey) ? s.hotkey : DEFAULT_HOTKEY,
+    captureHotkey: validHotkey(s.captureHotkey) ? s.captureHotkey : DEFAULT_CAPTURE_HOTKEY,
     onboarded: s.onboarded === true,
   };
 }
 
-// ---------- Горячая клавиша ----------
-function unregisterHotkey() {
-  if (hotkeyRegistered) globalShortcut.unregister(hotkeyRegistered);
-  hotkeyRegistered = null;
+// ---------- Горячие клавиши ----------
+// Глобальных сочетаний два: панель и распознавание текста с экрана (только macOS — там есть screencapture и Vision)
+const HOTKEY_ACTIONS: HotkeyAction[] = isMac ? ['panel', 'capture'] : ['panel'];
+const HOTKEY_SETTING = { panel: 'hotkey', capture: 'captureHotkey' } as const;
+const DEFAULT_HOTKEYS: Record<HotkeyAction, string> = { panel: DEFAULT_HOTKEY, capture: DEFAULT_CAPTURE_HOTKEY };
+const HOTKEY_HANDLERS: Record<HotkeyAction, () => void> = { panel: togglePanel, capture: captureText };
+
+function unregisterHotkey(action: HotkeyAction) {
+  const accel = hotkeysRegistered[action];
+  if (accel) globalShortcut.unregister(accel);
+  delete hotkeysRegistered[action];
 }
 
 // Пытается зарегистрировать; возвращает { ok, error }
-function registerHotkey(accel: unknown): HotkeyResult {
+function registerHotkey(action: HotkeyAction, accel: unknown): HotkeyResult {
   if (!validHotkey(accel)) return { ok: false, error: tr('hkNoKey') };
-  unregisterHotkey();
+  unregisterHotkey(action);
+  // сочетание другого действия: система его не отвергнет, но сработало бы только одно из двух
+  if (HOTKEY_ACTIONS.some((a) => a !== action && settings[HOTKEY_SETTING[a]] === accel)) {
+    return { ok: false, error: tr('hkDuplicate') };
+  }
   let ok = false;
   try {
-    ok = globalShortcut.register(accel, togglePanel);
+    ok = globalShortcut.register(accel, HOTKEY_HANDLERS[action]);
   } catch {
     ok = false;
   }
   if (!ok) return { ok: false, error: tr('hkTaken') };
-  hotkeyRegistered = accel;
+  hotkeysRegistered[action] = accel;
   return { ok: true };
 }
 
@@ -432,7 +470,7 @@ function createPageWindow(hash: string, width: number, height: number) {
 // ---------- Настройки ----------
 function showSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) return settingsWin.focus();
-  settingsWin = createPageWindow('settings', 560, 700);
+  settingsWin = createPageWindow('settings', 560, 812);
   syncSettingsLevel();
   settingsWin.on('blur', onWindowBlur);
   settingsWin.on('focus', () => clearTimeout(blurTimer));
@@ -453,7 +491,7 @@ function syncSettingsLevel() {
 // ---------- Онбординг (первый запуск) ----------
 function showOnboarding() {
   if (onboardingWin && !onboardingWin.isDestroyed()) return onboardingWin.focus();
-  onboardingWin = createPageWindow('onboarding', 560, 676);
+  onboardingWin = createPageWindow('onboarding', 560, 710);
   onboardingWin.on('closed', () => {
     onboardingWin = null;
     // закрыли крестиком — тоже считаем, что приветствие показано
@@ -561,6 +599,81 @@ function findSnippet(id: string) {
   return null;
 }
 
+// ---------- Распознавание текста (OCR) ----------
+function notify(title: string, body = '') {
+  if (!Notification.isSupported()) return;
+  new Notification({ title, body: body.length > 140 ? `${body.slice(0, 140)}…` : body, silent: true }).show();
+}
+
+// языки системы и интерфейса — подсказка для Vision на macOS 12, где он не умеет определять язык сам
+const ocrLangs = () => [...new Set([...app.getPreferredSystemLanguages(), settings.lang].map((l) => l.split('-')[0]))];
+
+// Распознаёт картинку и кладёт текст в буфер обмена, а значит и в историю. Возвращает текст;
+// null — ничего не нашлось или распознать не вышло (об этом уже сказано уведомлением: панели в этот момент может не быть).
+async function copyRecognized(file: string) {
+  let text: string;
+  try {
+    text = await recognize(file, ocrLangs());
+  } catch (err) {
+    console.error('ocr failed', err);
+    notify(tr('ocrFailed'));
+    return null;
+  }
+  if (!text) {
+    notify(tr('ocrEmpty'));
+    return null;
+  }
+  clipboard.writeText(text);
+  poll(); // сразу в историю, не дожидаясь следующего опроса
+  return text;
+}
+
+// Без разрешения «Запись экрана» screencapture снимает только обои и строку меню — текста там не будет.
+// Выдать разрешение может только сам пользователь, и действует оно после перезапуска приложения (macOS предложит его сама).
+async function ensureScreenAccess() {
+  if (systemPreferences.getMediaAccessStatus('screen') === 'granted') return true;
+  app.focus({ steal: true }); // у приложения без Dock диалог без окна-родителя иначе окажется под чужими окнами
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    message: tr('screenTitle'),
+    // npm run dev: разрешение спрашивают у «ответственного» процесса — терминала / VS Code, а не у ClipShelf.app в списке
+    detail: isDev ? `${tr('screenDetail')}\n\n${tr('screenDev')}` : tr('screenDetail'),
+    buttons: [tr('openSettings'), tr('cancel')],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) {
+    // своих окон нет — возвращаем фокус приложению, из которого начинали
+    if (!BrowserWindow.getAllWindows().some((w) => w.isVisible())) app.hide();
+    return false;
+  }
+  // обращение к экрану заносит ClipShelf в список «Запись экрана» (в первый раз — ещё и с системным запросом),
+  // иначе приложение пришлось бы искать и добавлять туда вручную
+  await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => {});
+  shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  return false;
+}
+
+// Как у TextSniper: выделить область экрана — её текст и QR-коды оказываются в буфере обмена.
+// Выделение рисует системный screencapture (тот же, что у ⌘⇧4, пробел переключает на окно целиком), читает Vision.
+let capturing = false;
+async function captureText() {
+  if (!isMac || capturing) return;
+  capturing = true;
+  const file = path.join(app.getPath('temp'), `clipshelf-capture-${crypto.randomUUID()}.png`);
+  try {
+    hidePanel(false); // панель поверх всех окон закрывала бы то, что хотят выделить
+    if (!(await ensureScreenAccess())) return;
+    await new Promise<void>((resolve) => execFile('screencapture', ['-i', '-x', '-o', file], () => resolve()));
+    if (!fs.existsSync(file)) return; // выделение отменили (Esc)
+    const text = await copyRecognized(file);
+    if (text) notify(tr('ocrCopied'), text);
+  } finally {
+    capturing = false;
+    fs.rm(file, { force: true }, () => {});
+  }
+}
+
 // ---------- IPC: история ----------
 ipcMain.handle('history:get', () => history);
 
@@ -603,6 +716,14 @@ ipcMain.handle('item:pin', (_e, id: string, pinned: boolean) => {
   item.pinned = pinned === true || undefined;
   saveHistory();
   broadcastHistory();
+});
+
+// Распознать текст на картинке из истории. Текст становится новой карточкой — её id уходит в интерфейс, чтобы её выбрать
+ipcMain.handle('item:recognize', async (_e, id: string) => {
+  const item = history.find((i) => i.id === id);
+  if (!isMac || item?.type !== 'image') return null;
+  const text = await copyRecognized(imagePath(item.id));
+  return (text && history.find((i) => i.sig === `txt:${hash(text)}`)?.id) || null;
 });
 
 ipcMain.handle('history:clear', () => clearHistory());
@@ -689,7 +810,7 @@ ipcMain.on('panel:resize-reset', () => setPanelSize(null));
 // ---------- IPC: настройки ----------
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
-  const { hotkey, ...rest } = patch || {}; // hotkey меняется только через hotkey:set
+  const { hotkey, captureHotkey, ...rest } = patch || {}; // сочетания меняются только через hotkey:set
   const prevPosition = settings.position;
   settings = normalizeSettings({ ...settings, ...rest });
   saveSettings();
@@ -702,24 +823,28 @@ ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
 });
 
 // смена сочетания: регистрируем новое, при ошибке возвращаем старое
-ipcMain.handle('hotkey:set', (_e, accel: string) => {
-  const prev = settings.hotkey;
-  const res = registerHotkey(accel);
+ipcMain.handle('hotkey:set', (_e, accel: string, action: HotkeyAction = 'panel') => {
+  if (!isOneOf(HOTKEY_ACTIONS, action)) return { ok: false, error: tr('hkNoKey') };
+  const key = HOTKEY_SETTING[action];
+  const prev = settings[key];
+  const res = registerHotkey(action, accel);
   if (!res.ok) {
-    registerHotkey(prev);
+    registerHotkey(action, prev);
     return res;
   }
-  settings.hotkey = accel;
+  settings[key] = accel;
   saveSettings();
   broadcastSettings();
   if (tray) tray.setContextMenu(buildTrayMenu());
   return res;
 });
 
-// пока пользователь записывает сочетание, глобальный хоткей отключён — иначе панель дёрнется
+// пока пользователь записывает сочетание, глобальные хоткеи отключены — иначе панель дёрнется или начнётся захват экрана
 ipcMain.handle('hotkey:recording', (_e, on: boolean) => {
-  if (on) unregisterHotkey();
-  else if (!hotkeyRegistered) registerHotkey(settings.hotkey);
+  for (const action of HOTKEY_ACTIONS) {
+    if (on) unregisterHotkey(action);
+    else if (!hotkeysRegistered[action]) registerHotkey(action, settings[HOTKEY_SETTING[action]]);
+  }
 });
 
 ipcMain.handle('hotkey:format', (_e, accel: string) => formatHotkey(accel));
@@ -817,6 +942,7 @@ function buildTrayMenu() {
   const login = app.getLoginItemSettings().openAtLogin;
   return Menu.buildFromTemplate([
     { label: `${t.open}  (${formatHotkey(settings.hotkey)})`, click: showPanel },
+    ...(isMac ? [{ label: `${t.capture}  (${formatHotkey(settings.captureHotkey)})`, click: captureText }] : []),
     { label: t.settings, click: showSettings },
     { label: t.intro, click: showOnboarding },
     { type: 'separator' },
@@ -864,12 +990,14 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
     watchSystemEvents();
 
-    const res = registerHotkey(settings.hotkey);
-    if (!res.ok) {
-      console.warn(`Could not register ${settings.hotkey}: ${res.error}`);
+    for (const action of HOTKEY_ACTIONS) {
+      const key = HOTKEY_SETTING[action];
+      const res = registerHotkey(action, settings[key]);
+      if (res.ok) continue;
+      console.warn(`Could not register ${settings[key]}: ${res.error}`);
       // пользовательское сочетание перестало работать — откатываемся на стандартное
-      if (settings.hotkey !== DEFAULT_HOTKEY && registerHotkey(DEFAULT_HOTKEY).ok) {
-        settings.hotkey = DEFAULT_HOTKEY;
+      if (settings[key] !== DEFAULT_HOTKEYS[action] && registerHotkey(action, DEFAULT_HOTKEYS[action]).ok) {
+        settings[key] = DEFAULT_HOTKEYS[action];
         saveSettings();
       }
     }

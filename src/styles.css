@@ -440,6 +440,15 @@ body,
   object-fit: cover;
   display: block;
 }
+/* идёт распознавание текста на картинке */
+.card.busy .card-body.image img {
+  animation: card-busy 0.7s ease-in-out infinite alternate;
+}
+@keyframes card-busy {
+  to {
+    opacity: 0.4;
+  }
+}
 .link-box {
   padding: 14px;
 }

@@ -6,6 +6,7 @@ import type { DictKey } from './i18n';
 import HotkeyField from './HotkeyField';
 
 const api = window.clip;
+const isMac = api?.platform === 'darwin';
 const POSITIONS: { id: Position; labelKey: DictKey }[] = [
   { id: 'bottom', labelKey: 'posBottom' },
   { id: 'top', labelKey: 'posTop' },
@@ -140,6 +141,11 @@ export default function Settings() {
           <Row title={t('hotkey')} stack>
             <HotkeyField value={settings.hotkey} />
           </Row>
+          {isMac && (
+            <Row title={t('captureHotkey')} hint={t('captureHint')} stack>
+              <HotkeyField value={settings.captureHotkey} action="capture" />
+            </Row>
+          )}
         </div>
 
         <button className="set-link" onClick={() => api.showOnboarding()}>
