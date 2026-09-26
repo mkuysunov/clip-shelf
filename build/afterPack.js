@@ -21,4 +21,23 @@ exports.default = async function afterPack(context) {
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], {
     stdio: 'inherit',
   });
+
+  // У ad-hoc подписи требование к коду по умолчанию — cdhash, а он меняется с каждой
+  // сборкой. macOS хранит разрешения («Запись экрана», «Универсальный доступ») вместе
+  // с этим требованием, так что после пересборки или обновления переключатель
+  // в Настройках остаётся включённым, но к новой версии уже не относится.
+  // Требование по bundle id одинаково у всех сборок. Переподписываем только сам бандл:
+  // у вложенных хелперов свои идентификаторы, им это требование не подходит.
+  execFileSync(
+    'codesign',
+    [
+      '--force',
+      '--sign',
+      '-',
+      '--requirements',
+      `=designated => identifier "${context.packager.appInfo.id}"`,
+      appPath,
+    ],
+    { stdio: 'inherit' }
+  );
 };
